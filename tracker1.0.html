@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Financial Tracker — Single File (Python in Browser)</title>
+  <!-- Tailwind for quick, clean styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Brython: run Python in the browser -->
+  <script src="https://cdn.jsdelivr.net/npm/brython@3.12.0/brython.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/brython@3.12.0/brython_stdlib.js"></script>
+  <style>
+    /* Small quality-of-life tweaks */
+    .number-input { text-align: right; }
+    .chip { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium; }
+  </style>
+</head>
+<body onload="brython()" class="bg-slate-50 text-slate-800">
+  <div class="max-w-5xl mx-auto p-6">
+    <header class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <h1 class="text-3xl font-bold tracking-tight">Financial Tracker</h1>
+        <p class="text-sm text-slate-500">Single HTML file. Data saved to your browser (localStorage).</p>
+      </div>
+      <div class="flex gap-2">
+        <button id="exportBtn" class="px-3 py-2 rounded-xl bg-slate-900 text-white shadow">Export JSON</button>
+        <label class="px-3 py-2 rounded-xl border shadow bg-white cursor-pointer">
+          Import JSON
+          <input id="importInput" type="file" accept="application/json" class="hidden" />
+        </label>
+        <button id="clearAllBtn" class="px-3 py-2 rounded-xl border border-red-300 text-red-700 bg-red-50 shadow">Clear All</button>
+      </div>
+    </header>
+
+    <!-- Add Transaction Form -->
+    <section class="mt-6">
+      <div class="grid md:grid-cols-12 gap-3 bg-white p-4 rounded-2xl shadow">
+        <div class="md:col-span-2">
+          <label class="block text-xs text-slate-500">Date</label>
+          <input id="date" type="date" class="w-full p-2 rounded-xl border" />
+        </div>
+        <div class="md:col-span-3">
+          <label class="block text-xs text-slate-500">Description</label>
+          <input id="desc" type="text" placeholder="e.g., Groceries" class="w-full p-2 rounded-xl border" />
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs text-slate-500">Category</label>
+          <input id="cat" type="text" placeholder="e.g., Food" class="w-full p-2 rounded-xl border" />
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs text-slate-500">Type</label>
+          <select id="type" class="w-full p-2 rounded-xl border">
+            <option value="expense">Expense</option>
+            <option value="income">Income</option>
+          </select>
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs text-slate-500">Amount</label>
+          <input id="amount" type="number" step="0.01" placeholder="0.00" class="w-full p-2 rounded-xl border number-input" />
+        </div>
+        <div class="md:col-span-1 flex items-end">
+          <button id="addBtn" class="w-full p-2 rounded-xl bg-emerald-600 text-white shadow">Add</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Filters & Summary -->
+    <section class="mt-6 grid md:grid-cols-12 gap-4">
+      <div class="md:col-span-7 bg-white p-4 rounded-2xl shadow">
+        <div class="grid grid-cols-2 md:grid-cols-6 gap-3">
+          <div>
+            <label class="block text-xs text-slate-500">From</label>
+            <input id="fromDate" type="date" class="w-full p-2 rounded-xl border" />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500">To</label>
+            <input id="toDate" type="date" class="w-full p-2 rounded-xl border" />
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-xs text-slate-500">Category</label>
+            <select id="filterCat" class="w-full p-2 rounded-xl border"></select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500">Type</label>
+            <select id="filterType" class="w-full p-2 rounded-xl border">
+              <option value="all">All</option>
+              <option value="expense">Expense</option>
+              <option value="income">Income</option>
+            </select>
+          </div>
+          <div class="flex items-end">
+            <button id="resetFilters" class="w-full p-2 rounded-xl border bg-slate-50">Reset</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="md:col-span-5 grid grid-cols-3 gap-3">
+        <div class="bg-white p-4 rounded-2xl shadow">
+          <div class="text-xs text-slate-500">Income</div>
+          <div id="sumIncome" class="text-2xl font-semibold">—</div>
+        </div>
+        <div class="bg-white p-4 rounded-2xl shadow">
+          <div class="text-xs text-slate-500">Expenses</div>
+          <div id="sumExpense" class="text-2xl font-semibold">—</div>
+        </div>
+        <div class="bg-white p-4 rounded-2xl shadow">
+          <div class="text-xs text-slate-500">Balance</div>
+          <div id="sumBalance" class="text-2xl font-semibold">—</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Transactions Table -->
+    <section class="mt-6 bg-white rounded-2xl shadow overflow-hidden">
+      <div class="p-4 flex justify-between items-center">
+        <h2 class="text-lg font-semibold">Transactions</h2>
+        <div class="text-xs text-slate-500"><span id="countSpan">0</span> items</div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-100 text-slate-600">
+            <tr>
+              <th class="text-left px-4 py-2">Date</th>
+              <th class="text-left px-4 py-2">Description</th>
+              <th class="text-left px-4 py-2">Category</th>
+              <th class="text-right px-4 py-2">Amount</th>
+              <th class="text-right px-4 py-2">Type</th>
+              <th class="text-right px-4 py-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="mt-8 text-center text-xs text-slate-400">
+      Built with <span class="font-semibold">Brython</span> — pure Python in the browser. Your data never leaves your device.
+    </footer>
+  </div>
+
+  <!-- ===== Python app (Brython) ===== -->
+  <script type="text/python">
+from browser import document, html, bind, alert, window
+from browser.local_storage import storage as local_storage
+import json
+from datetime import date
+
+# ---------------- Utilities ----------------
+CURRENCY = '£'  # change to your preferred currency symbol if needed
+
+def fmt_money(x: float) -> str:
+    sign = '-' if x < 0 else ''
+    return f"{sign}{CURRENCY}{abs(x):,.2f}"
+
+# ---------------- Persistence ----------------
+KEY = 'financial-tracker-transactions'
+
+def load_data():
+    try:
+        raw = local_storage.get(KEY)
+        if raw:
+            data = json.loads(raw)
+            # Basic validation / normalization
+            for t in data:
+                t['amount'] = float(t['amount'])
+            return data
+    except Exception as e:
+        print('Load error:', e)
+    return []
+
+
+def save_data(data):
+    try:
+        local_storage[KEY] = json.dumps(data)
+    except Exception as e:
+        alert(f"Failed to save: {e}")
+
+# ---------------- State ----------------
+transactions = load_data()
+
+# ---------------- DOM refs ----------------
+tbody = document['tbody']
+count_span = document['countSpan']
+sum_income = document['sumIncome']
+sum_expense = document['sumExpense']
+sum_balance = document['sumBalance']
+filter_cat = document['filterCat']
+filter_type = document['filterType']
+from_date = document['fromDate']
+to_date = document['toDate']
+
+# Seed defaults
+if not document['date'].value:
+    document['date'].value = str(date.today())
+
+# ---------------- Rendering ----------------
+
+def categories():
+    cats = sorted({t['category'] for t in transactions if t.get('category')})
+    return ['All'] + cats
+
+
+def refresh_filters():
+    # Category options
+    filter_cat.clear()
+    for c in categories():
+        opt = html.OPTION(c)
+        opt.value = c.lower()
+        filter_cat <= opt
+    filter_cat.value = 'all'
+
+
+def matches_filters(t):
+    # Date range filter
+    if from_date.value and t['date'] < from_date.value:
+        return False
+    if to_date.value and t['date'] > to_date.value:
+        return False
+    # Category filter
+    cat_val = filter_cat.value
+    if cat_val != 'all' and t.get('category','').lower() != cat_val:
+        return False
+    # Type filter
+    type_val = filter_type.value
+    if type_val != 'all' and t['type'] != type_val:
+        return False
+    return True
+
+
+def render_table():
+    tbody.clear()
+    shown = [t for t in transactions if matches_filters(t)]
+    shown.sort(key=lambda x: (x['date'], x['id']))
+    total_income = sum(t['amount'] for t in shown if t['type']=='income')
+    total_expense = sum(t['amount'] for t in shown if t['type']=='expense')
+    balance = total_income - total_expense
+
+    for t in shown:
+        row = html.TR()
+        row <= html.TD(t['date'], Class="px-4 py-2 whitespace-nowrap")
+        row <= html.TD(t.get('description',''), Class="px-4 py-2")
+        row <= html.TD(t.get('category',''), Class="px-4 py-2")
+        amt_txt = fmt_money(t['amount']) if t['type']=='income' else fmt_money(-t['amount'])
+        amt_cell = html.TD(amt_txt, Class="px-4 py-2 text-right font-medium")
+        row <= amt_cell
+        type_chip = html.SPAN(t['type'].capitalize(), Class=("px-2 py-0.5 rounded-full text-xs font-medium "
+                            + ("bg-emerald-100 text-emerald-700" if t['type']=='income' else "bg-rose-100 text-rose-700")))
+        row <= html.TD(type_chip, Class="px-4 py-2 text-right")
+        # Actions: edit, delete
+        btns = html.DIV(Class="flex justify-end gap-2")
+        edit_btn = html.BUTTON('Edit', Class="px-2 py-1 rounded-lg border")
+        delete_btn = html.BUTTON('Delete', Class="px-2 py-1 rounded-lg border border-rose-300 text-rose-700")
+
+        @bind(edit_btn, 'click')
+        def _edit(evt, t=t):
+            # Load into the form for quick editing
+            document['date'].value = t['date']
+            document['desc'].value = t.get('description','')
+            document['cat'].value = t.get('category','')
+            document['type'].value = t['type']
+            document['amount'].value = str(t['amount']) if t['type']=='income' else str(t['amount'])
+            # Remove existing entry; user will click Add to re-save
+            transactions.remove(t)
+            save_data(transactions)
+            render_all()
+
+        @bind(delete_btn, 'click')
+        def _delete(evt, t=t):
+            try:
+                transactions.remove(t)
+                save_data(transactions)
+                render_all()
+            except Exception as e:
+                alert(f"Delete failed: {e}")
+
+        btns <= edit_btn
+        btns <= delete_btn
+        row <= html.TD(btns, Class="px-4 py-2 text-right")
+        tbody <= row
+
+    count_span.text = str(len(shown))
+    sum_income.text = fmt_money(total_income)
+    sum_expense.text = fmt_money(total_expense)
+    sum_balance.text = fmt_money(balance)
+
+
+def render_all():
+    refresh_filters()
+    render_table()
+
+# ---------------- Actions ----------------
+
+@bind(document['addBtn'], 'click')
+def add_transaction(evt):
+    d = document['date'].value.strip()
+    desc = document['desc'].value.strip()
+    cat = document['cat'].value.strip()
+    typ = document['type'].value
+    try:
+        amt = float(document['amount'].value)
+    except ValueError:
+        alert('Amount must be a number.')
+        return
+    if not d:
+        alert('Please select a date.')
+        return
+    if amt <= 0:
+        alert('Amount must be greater than 0.')
+        return
+
+    new = {
+        'id': int(window.Date.now()),
+        'date': d,
+        'description': desc,
+        'category': cat,
+        'type': typ,
+        'amount': amt,
+    }
+    transactions.append(new)
+    save_data(transactions)
+
+    # Clear light
+    document['desc'].value = ''
+    document['amount'].value = ''
+
+    render_all()
+
+# Filter interactions
+for el_id in ['fromDate','toDate','filterCat','filterType']:
+    @bind(document[el_id], 'change')
+    def _f(evt):
+        render_table()
+
+@bind(document['resetFilters'], 'click')
+def reset_filters(evt):
+    from_date.value = ''
+    to_date.value = ''
+    filter_type.value = 'all'
+    refresh_filters()
+    render_table()
+
+# Export / Import / Clear
+@bind(document['exportBtn'], 'click')
+def export_json(evt):
+    try:
+        data = json.dumps(transactions, indent=2)
+        blob = window.Blob.new([data], {"type": "application/json"})
+        url = window.URL.createObjectURL(blob)
+        a = html.A("download", href=url)
+        a.attrs['download'] = 'financial-tracker-export.json'
+        document <= a
+        a.click()
+        a.remove()
+        window.URL.revokeObjectURL(url)
+    except Exception as e:
+        alert(f"Export failed: {e}")
+
+@bind(document['importInput'], 'change')
+def import_json(evt):
+    try:
+        file = evt.target.files[0]
+        if not file:
+            return
+        reader = window.FileReader.new()
+        def onload(_):
+            try:
+                incoming = json.loads(reader.result)
+                if not isinstance(incoming, list):
+                    raise ValueError('JSON must be a list of transactions')
+                # light validation
+                cleaned = []
+                for t in incoming:
+                    if not {'date','type','amount'} <= set(t.keys()):
+                        continue
+                    t['amount'] = float(t['amount'])
+                    t['id'] = int(t.get('id', window.Date.now()))
+                    t['description'] = t.get('description','')
+                    t['category'] = t.get('category','')
+                    if t['type'] not in ('income','expense'):
+                        continue
+                    cleaned.append(t)
+                # Merge and save
+                transactions.clear()
+                transactions.extend(cleaned)
+                save_data(transactions)
+                render_all()
+            except Exception as e:
+                alert(f"Import failed: {e}")
+        reader.bind('load', onload)
+        reader.readAsText(file)
+    except Exception as e:
+        alert(f"Import failed: {e}")
+
+@bind(document['clearAllBtn'], 'click')
+def clear_all(evt):
+    if window.confirm('This will permanently delete all transactions saved in this browser. Continue?'):
+        transactions.clear()
+        save_data(transactions)
+        render_all()
+
+# Initial render
+render_all()
+  </script>
+</body>
+</html>
